@@ -1,21 +1,35 @@
-APP=scx_fifo
+# Makefile for SCX FIFO Project
 
-all: $(APP)
+CLANG ?= clang
+BPFTOOL ?= bpftool
+ARCH ?= $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/' | sed 's/ppc64le/powerpc/' | sed 's/mips.*/mips/')
 
+# File names
+APP = scx_fifo
+BPF_OBJ = ${APP}.bpf.o
+USER_APP = ${APP}
+
+# Compiler flags
+CFLAGS = -g -O2 -Wall
+LDFLAGS = -lbpf -lelf
+
+all: $(USER_APP)
+
+# 1. Generate vmlinux.h (Kernel types definitions)
 vmlinux.h:
-	bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
+	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
 
-# compile to bpf o
-scx_fifo.bpf.o: scx_fifo.bpf.c vmlinux.h
-	clang -g -O2 -target bpf -c scx_fifo.bpf.c -o scx_fifo.bpf.o
+# 2. Compile BPF code to Object file
+$(BPF_OBJ): $(APP).bpf.c vmlinux.h
+	$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) -I. -c $(APP).bpf.c -o $(BPF_OBJ)
 
-# generate header
-scx_fifo.bpf.skel.h: scx_fifo.bpf.o
-	bpftool gen skeleton scx_fifo.bpf.o > scx_fifo.bpf.skel.h
+# 3. Generate BPF Skeleton (Linker between C and BPF)
+$(APP).bpf.skel.h: $(BPF_OBJ)
+	$(BPFTOOL) gen skeleton $(BPF_OBJ) > $(APP).bpf.skel.h
 
-# compile and link
-$(APP): main.c scx_fifo.bpf.skel.h
-	gcc -g -O2 main.c -o $(APP) -lbpf -lelf -lz
+# 4. Compile User-space Loader
+$(USER_APP): main.c $(APP).bpf.skel.h
+	$(CC) $(CFLAGS) main.c -o $(USER_APP) $(LDFLAGS)
 
 clean:
-	rm -f *.o *.skel.h $(APP)
+	rm -f $(USER_APP) $(BPF_OBJ) $(APP).bpf.skel.h vmlinux.h *.o
