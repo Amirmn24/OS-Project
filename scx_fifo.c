@@ -27,7 +27,7 @@ static void sigint_handler(int sig)
 	exit_req = 1;
 }
 
-/* stats[0]=idle-local-fastpath, stats[1]=global-enqueue */
+// stats[0]=local, stats[1]=global-enqueue
 static void read_stats(struct scx_fifo *skel, __u64 stats_out[2])
 {
 	int nr_cpus = libbpf_num_possible_cpus();
